@@ -1,344 +1,94 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UNU PDF Editor — PaperMint (Client-only MVP)</title>
+  <meta charset="UTF-8">
+  <title>PDF Editor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <!-- Tailwind CDN -->
+  <!-- Tailwind CSS (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    :root { --accent:#6366F1; }
-    .btn { @apply px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-sm; }
-    .btn-accent { @apply bg-indigo-600 hover:bg-indigo-500 text-white; }
-    .toolbar-label { @apply text-xs text-slate-400; }
-    .thumb { @apply border border-slate-300 rounded-md overflow-hidden cursor-pointer; }
-    .active-thumb { outline: 2px solid var(--accent); }
-  </style>
 
-  <!-- PDF.js (rendering) -->
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.min.js"></script>
-  <script>
-    // Set worker path
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.min.js";
-  </script>
-
-  <!-- pdf-lib (writing/embedding edits) -->
-  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <!-- PDF.js library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 </head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-6">
+  
+  <div class="bg-white p-6 rounded-2xl shadow-lg w-full max-w-3xl">
+    <h1 class="text-2xl font-bold mb-4 text-center">PDF Upload & Viewer</h1>
 
-<body class="bg-slate-100 text-slate-900">
-  <div class="max-w-7xl mx-auto p-4 md:p-6">
-    <header class="flex items-center justify-between gap-3 mb-4">
-      <h1 class="text-xl md:text-2xl font-bold">
-        UNU PDF Editor — <span class="text-indigo-600">PaperMint</span>
-        <span class="text-xs align-middle ml-2 px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full">
-          Client-only MVP
-        </span>
-      </h1>
-      <div class="flex items-center gap-2">
-        <label class="btn" for="fileInput">Upload PDF</label>
-        <input id="fileInput" type="file" accept="application/pdf" class="hidden" />
-        <button id="downloadBtn" class="btn btn-accent" disabled>Download Edited PDF</button>
+    <!-- File Upload -->
+    <input id="file-input" type="file" accept="application/pdf"
+      class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 mb-4">
+
+    <!-- PDF Viewer -->
+    <div id="pdf-viewer" class="flex flex-col items-center">
+      <canvas id="pdf-canvas" class="border shadow-md mb-4"></canvas>
+      <div class="flex justify-center gap-4">
+        <button id="prev" class="px-4 py-2 bg-blue-500 text-white rounded-lg">Previous</button>
+        <span id="page-info" class="text-gray-700"></span>
+        <button id="next" class="px-4 py-2 bg-blue-500 text-white rounded-lg">Next</button>
       </div>
-    </header>
-
-    <section class="grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-4">
-      <!-- Sidebar: thumbnails & document info -->
-      <aside class="bg-white rounded-2xl shadow p-3 h-[75vh] overflow-auto">
-        <div class="mb-3">
-          <div class="toolbar-label">Document</div>
-          <div id="docMeta" class="text-sm text-slate-600">No file loaded</div>
-        </div>
-        <div class="toolbar-label mb-2">Pages</div>
-        <div id="thumbs" class="grid gap-2"></div>
-      </aside>
-
-      <!-- Editor area -->
-      <main class="bg-white rounded-2xl shadow p-3">
-        <!-- Tools -->
-        <div class="flex flex-wrap items-center gap-2 mb-3">
-          <div class="toolbar-label w-full md:w-auto">Tools</div>
-          <button class="btn" data-tool="pan">Pan/Select</button>
-          <button class="btn" data-tool="text">Add Text</button>
-          <button class="btn" data-tool="rect">Highlight Rect</button>
-          <label class="btn" for="imgInput">Add Image</label>
-          <input id="imgInput" type="file" accept="image/*" class="hidden" />
-          <button id="undoBtn" class="btn">Undo</button>
-          <div class="flex items-center gap-2 ml-auto">
-            <label class="toolbar-label">Font</label>
-            <input id="fontSize" type="number" value="16" class="w-16 px-2 py-1 border rounded" />
-            <input id="color" type="color" value="#111111" class="w-8 h-8" />
-            <label class="toolbar-label ml-2">Opacity</label>
-            <input id="opacity" type="range" min="0.1" max="1" step="0.1" value="0.2" />
-          </div>
-        </div>
-
-        <!-- Canvas container -->
-        <div id="canvasWrap" class="relative mx-auto max-w-full overflow-auto border rounded-xl bg-slate-50 flex items-center justify-center min-h-[70vh]">
-          <canvas id="pdfCanvas" class="block"></canvas>
-          <!-- On-canvas hint -->
-          <div id="hint" class="absolute bottom-3 left-3 text-xs bg-black/60 text-white px-2 py-1 rounded-md hidden"></div>
-        </div>
-      </main>
-    </section>
-
-    <footer class="text-xs text-slate-500 mt-4">
-      All edits happen in your browser. No files are uploaded to a server.
-    </footer>
+    </div>
   </div>
 
-<script>
-// ---------- State ----------
-let pdfArrayBuffer = null;
-let pdfDoc = null;      // pdf-lib doc
-let pdfjsDoc = null;    // pdf.js doc
-let currentPageIndex = 0;
-let pageViewport = null;
-let annotations = {};
-let tool = 'pan';
-let lastImageBytes = null;
+  <script>
+    let pdfDoc = null,
+        pageNum = 1,
+        canvas = document.getElementById("pdf-canvas"),
+        ctx = canvas.getContext("2d");
 
-// UI elements
-const fileInput = document.getElementById('fileInput');
-const imgInput = document.getElementById('imgInput');
-const downloadBtn = document.getElementById('downloadBtn');
-const thumbs = document.getElementById('thumbs');
-const canvas = document.getElementById('pdfCanvas');
-const ctx = canvas.getContext('2d');
-const hint = document.getElementById('hint');
-const docMeta = document.getElementById('docMeta');
-const fontSizeEl = document.getElementById('fontSize');
-const colorEl = document.getElementById('color');
-const opacityEl = document.getElementById('opacity');
-const undoBtn = document.getElementById('undoBtn');
+    const fileInput = document.getElementById("file-input");
+    const pageInfo = document.getElementById("page-info");
 
-// Tool buttons
-for (const b of document.querySelectorAll('[data-tool]')) {
-  b.addEventListener('click', () => {
-    tool = b.dataset.tool;
-    for (const btn of document.querySelectorAll('[data-tool]')) btn.classList.remove('btn-accent');
-    b.classList.add('btn-accent');
-    showHint(tool === 'text' ? 'Click to place text' :
-             tool === 'rect' ? 'Drag to draw highlight' : 'Pan/Select');
-  });
-}
-
-function showHint(t){
-  hint.textContent = t;
-  hint.classList.remove('hidden');
-  clearTimeout(showHint._t);
-  showHint._t = setTimeout(()=>hint.classList.add('hidden'), 2000);
-}
-
-// ---------- File loading ----------
-fileInput.addEventListener('change', async (e) => {
-  try {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    pdfArrayBuffer = await file.arrayBuffer();
-    await loadDocuments(pdfArrayBuffer);
-  } catch(err) {
-    console.error("Upload failed", err);
-    alert("❌ Could not open PDF. Check console.");
-  }
-});
-
-async function loadDocuments(ab){
-  try {
-    // pdf-lib
-    pdfDoc = await PDFLib.PDFDocument.load(ab);
-    // pdf.js
-    pdfjsDoc = await pdfjsLib.getDocument({ data: ab }).promise;
-    docMeta.textContent = `${pdfjsDoc.numPages} pages • ${(ab.byteLength/1024/1024).toFixed(2)} MB`;
-    buildThumbnails();
-    currentPageIndex = 0;
-    annotations = {};
-    downloadBtn.disabled = false;
-    await renderPage(currentPageIndex);
-  } catch(err) {
-    console.error("Failed to load PDF", err);
-    docMeta.textContent = "❌ Could not load PDF (check console)";
-  }
-}
-
-// ---------- Thumbnails ----------
-async function buildThumbnails(){
-  thumbs.innerHTML = '';
-  for (let i = 1; i <= pdfjsDoc.numPages; i++){
-    const page = await pdfjsDoc.getPage(i);
-    const viewport = page.getViewport({ scale: 0.2 });
-    const c = document.createElement('canvas');
-    c.width = viewport.width; c.height = viewport.height;
-    const x = c.getContext('2d');
-    await page.render({ canvasContext: x, viewport }).promise;
-    const wrap = document.createElement('div');
-    wrap.className = 'thumb';
-    if (i-1 === currentPageIndex) wrap.classList.add('active-thumb');
-    wrap.appendChild(c);
-    wrap.addEventListener('click', async ()=>{ 
-      currentPageIndex = i-1; 
-      document.querySelectorAll('#thumbs .thumb').forEach(el=>el.classList.remove('active-thumb'));
-      wrap.classList.add('active-thumb');
-      await renderPage(currentPageIndex);
-    });
-    thumbs.appendChild(wrap);
-  }
-}
-
-// ---------- Render Page ----------
-async function renderPage(index){
-  const page = await pdfjsDoc.getPage(index+1);
-  const viewport = page.getViewport({ scale: 1.5 });
-  pageViewport = viewport;
-  canvas.width = Math.floor(viewport.width);
-  canvas.height = Math.floor(viewport.height);
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  drawOverlays();
-}
-
-function drawOverlays(){
-  const list = annotations[currentPageIndex] || [];
-  for (const a of list){
-    if (a.type === 'text'){
-      ctx.save();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = a.color || '#111';
-      ctx.font = `${a.size || 16}px sans-serif`;
-      ctx.fillText(a.text, a.x, a.y);
-      ctx.restore();
-    } else if (a.type === 'rect'){
-      ctx.save();
-      ctx.globalAlpha = a.opacity ?? 0.2;
-      ctx.fillStyle = a.color || '#f59e0b';
-      ctx.fillRect(a.x, a.y, a.w, a.h);
-      ctx.restore();
-    } else if (a.type === 'image' && a.imgEl){
-      ctx.drawImage(a.imgEl, a.x, a.y, a.w, a.h);
-    }
-  }
-}
-
-// ---------- Canvas interactions ----------
-let dragStart = null;
-canvas.addEventListener('mousedown', (e)=>{
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-  if (tool === 'rect'){
-    dragStart = { x, y };
-  } else if (tool === 'text'){
-    const text = prompt('Enter text');
-    if (!text) return;
-    const a = { type:'text', x, y, text, size: parseInt(fontSizeEl.value||'16',10), color: colorEl.value };
-    (annotations[currentPageIndex] ||= []).push(a);
-    drawOverlays();
-  }
-});
-
-canvas.addEventListener('mousemove', (e)=>{
-  if (!dragStart || tool !== 'rect') return;
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-  renderPage(currentPageIndex).then(()=>{
-    const w = x - dragStart.x; const h = y - dragStart.y;
-    ctx.save();
-    ctx.globalAlpha = parseFloat(opacityEl.value||'0.2');
-    ctx.fillStyle = colorEl.value;
-    ctx.fillRect(dragStart.x, dragStart.y, w, h);
-    ctx.restore();
-  });
-});
-
-canvas.addEventListener('mouseup', (e)=>{
-  if (!dragStart || tool !== 'rect') return;
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-  const a = { type:'rect', x: dragStart.x, y: dragStart.y, w: x-dragStart.x, h: y-dragStart.y, color: colorEl.value, opacity: parseFloat(opacityEl.value||'0.2') };
-  (annotations[currentPageIndex] ||= []).push(a);
-  dragStart = null;
-  drawOverlays();
-});
-
-imgInput.addEventListener('change', async (e)=>{
-  const file = e.target.files?.[0]; if (!file) return;
-  const bytes = await file.arrayBuffer();
-  lastImageBytes = new Uint8Array(bytes);
-  tool = 'image'; showHint('Click on page to place image');
-  for (const btn of document.querySelectorAll('[data-tool]')) btn.classList.remove('btn-accent');
-});
-
-canvas.addEventListener('click', async (e)=>{
-  if (tool !== 'image' || !lastImageBytes) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-  const imgEl = document.createElement('img');
-  imgEl.src = URL.createObjectURL(new Blob([lastImageBytes]));
-  imgEl.onload = ()=>{
-    const targetW = Math.min(imgEl.naturalWidth, canvas.width/2);
-    const ratio = targetW / imgEl.naturalWidth;
-    const targetH = imgEl.naturalHeight * ratio;
-    const a = { type:'image', x, y, w: targetW, h: targetH, imgBytes: lastImageBytes, imgEl };
-    (annotations[currentPageIndex] ||= []).push(a);
-    drawOverlays();
-  }
-});
-
-undoBtn.addEventListener('click', ()=>{
-  const list = annotations[currentPageIndex] || [];
-  list.pop();
-  annotations[currentPageIndex] = list;
-  renderPage(currentPageIndex);
-});
-
-// ---------- Download ----------
-downloadBtn.addEventListener('click', async ()=>{
-  if (!pdfDoc) return;
-  const pages = pdfDoc.getPages();
-  for (const [pIdx, items] of Object.entries(annotations)){
-    const page = pages[parseInt(pIdx,10)];
-    if (!page || !items || !items.length) continue;
-    const { width, height } = page.getSize();
-    const scaleX = width / canvas.width;
-    const scaleY = height / canvas.height;
-    for (const a of items){
-      if (a.type === 'text'){
-        const x = a.x * scaleX;
-        const y = height - a.y * scaleY;
-        const font = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-        page.drawText(a.text, { x, y, size: a.size||16, font, color: PDFLib.rgb(...hexToRgb01(a.color||'#111')) });
-      } else if (a.type === 'rect'){
-        const x = a.x * scaleX;
-        const y = height - (a.y + a.h) * scaleY;
-        page.drawRectangle({ x, y, width: a.w*scaleX, height: Math.abs(a.h*scaleY), color: PDFLib.rgb(...hexToRgb01(a.color||'#f59e0b')), opacity: a.opacity ?? 0.2 });
-      } else if (a.type === 'image' && a.imgBytes){
-        try {
-          let embed;
-          if (a.imgBytes[0] === 0x89 && a.imgBytes[1] === 0x50) embed = await pdfDoc.embedPng(a.imgBytes);
-          else embed = await pdfDoc.embedJpg(a.imgBytes);
-          const x = a.x * scaleX;
-          const y = height - (a.y + a.h) * scaleY;
-          page.drawImage(embed, { x, y, width: a.w*scaleX, height: a.h*scaleY });
-        } catch (err){ console.error('Image embed failed', err); }
+    // Handle File Upload
+    fileInput.addEventListener("change", function(e) {
+      const file = e.target.files[0];
+      if (file && file.type === "application/pdf") {
+        const fileReader = new FileReader();
+        fileReader.onload = function() {
+          const typedarray = new Uint8Array(this.result);
+          pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+            pdfDoc = pdf;
+            pageNum = 1;
+            renderPage(pageNum);
+          });
+        };
+        fileReader.readAsArrayBuffer(file);
+      } else {
+        alert("Please upload a valid PDF file.");
       }
-    }
-  }
-  const bytes = await pdfDoc.save({ updateFieldAppearances: true });
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'UNU_PaperMint_edited.pdf';
-  a.click();
-});
+    });
 
-function hexToRgb01(hex){
-  hex = hex.replace('#','');
-  if (hex.length===3) hex = hex.split('').map(c=>c+c).join('');
-  const r = parseInt(hex.substring(0,2),16)/255;
-  const g = parseInt(hex.substring(2,4),16)/255;
-  const b = parseInt(hex.substring(4,6),16)/255;
-  return [r,g,b];
-}
-</script>
+    // Render Page
+    function renderPage(num) {
+      pdfDoc.getPage(num).then(function(page) {
+        let viewport = page.getViewport({ scale: 1.5 });
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        let renderContext = {
+          canvasContext: ctx,
+          viewport: viewport
+        };
+        page.render(renderContext);
+
+        pageInfo.textContent = `Page ${num} of ${pdfDoc.numPages}`;
+      });
+    }
+
+    // Next & Prev Buttons
+    document.getElementById("prev").addEventListener("click", function() {
+      if (pageNum <= 1) return;
+      pageNum--;
+      renderPage(pageNum);
+    });
+
+    document.getElementById("next").addEventListener("click", function() {
+      if (pageNum >= pdfDoc.numPages) return;
+      pageNum++;
+      renderPage(pageNum);
+    });
+  </script>
+
 </body>
 </html>
