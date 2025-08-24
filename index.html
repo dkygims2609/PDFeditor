@@ -2,94 +2,91 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>PDF Editor</title>
+  <title>Image Editor</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
 </head>
-<body class="bg-gray-100 flex flex-col items-center p-6">
+<body class="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
 
-  <!-- Upload -->
-  <div class="mb-4">
-    <input type="file" id="fileInput" accept="application/pdf" class="border p-2">
+  <h1 class="text-2xl font-bold mb-4">🖊️ Image Editor (Add Text + Signature)</h1>
+
+  <!-- Controls -->
+  <div class="mb-4 flex gap-2">
+    <input type="file" id="fileInput" accept="image/*" class="p-2 bg-gray-800 rounded" />
+    <button id="addTextBtn" class="px-4 py-2 bg-blue-600 rounded">Add Text</button>
+    <button id="enableSignBtn" class="px-4 py-2 bg-green-600 rounded">Enable Sign</button>
+    <button id="disableSignBtn" class="px-4 py-2 bg-yellow-600 rounded">Disable Sign</button>
+    <button id="saveBtn" class="px-4 py-2 bg-red-600 rounded">Save</button>
   </div>
 
-  <!-- Toolbar -->
-  <div id="toolbar" class="hidden space-x-4 mb-4">
-    <button id="highlightBtn" class="px-4 py-2 bg-yellow-400 rounded">Highlight</button>
-    <button id="textBtn" class="px-4 py-2 bg-blue-400 rounded">Add Text</button>
-    <button id="drawBtn" class="px-4 py-2 bg-green-400 rounded">Draw</button>
-    <button id="downloadBtn" class="px-4 py-2 bg-purple-500 text-white rounded">Download</button>
-  </div>
-
-  <!-- PDF Viewer -->
-  <div id="pdfViewer" class="w-full max-w-4xl bg-white shadow-md p-4">
-    <canvas id="pdfCanvas" class="border"></canvas>
-  </div>
+  <!-- Canvas -->
+  <canvas id="canvas" width="800" height="600" class="border border-gray-500 bg-white"></canvas>
 
   <script>
-    const fileInput = document.getElementById("fileInput");
-    const pdfCanvas = document.getElementById("pdfCanvas");
-    const ctx = pdfCanvas.getContext("2d");
-    const toolbar = document.getElementById("toolbar");
+    const canvas = new fabric.Canvas("canvas", {
+      selection: true
+    });
 
-    let pdfDoc = null;
-    let pageNum = 1;
-
-    fileInput.addEventListener("change", (e) => {
+    // Upload image
+    document.getElementById("fileInput").addEventListener("change", (e) => {
       const file = e.target.files[0];
-      if (file && file.type === "application/pdf") {
-        const reader = new FileReader();
-        reader.onload = function() {
-          const typedarray = new Uint8Array(this.result);
-          pdfjsLib.getDocument(typedarray).promise.then((pdf) => {
-            pdfDoc = pdf;
-            renderPage(pageNum);
-            toolbar.classList.remove("hidden"); // show edit tools
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (f) => {
+        fabric.Image.fromURL(f.target.result, (img) => {
+          img.scaleToWidth(canvas.width);
+          canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), {
+            scaleX: canvas.width / img.width,
+            scaleY: canvas.height / img.height
           });
-        };
-        reader.readAsArrayBuffer(file);
-      }
+        });
+      };
+      reader.readAsDataURL(file);
     });
 
-    function renderPage(num) {
-      pdfDoc.getPage(num).then((page) => {
-        const viewport = page.getViewport({ scale: 1.5 });
-        pdfCanvas.height = viewport.height;
-        pdfCanvas.width = viewport.width;
+    // Add text at cursor
+    let isAddingText = false;
+    document.getElementById("addTextBtn").addEventListener("click", () => {
+      isAddingText = true;
+      canvas.defaultCursor = "text";
+    });
 
-        const renderContext = {
-          canvasContext: ctx,
-          viewport: viewport,
-        };
-        page.render(renderContext);
+    canvas.on("mouse:down", function (opt) {
+      if (!isAddingText) return;
+      const pointer = canvas.getPointer(opt.e);
+      const text = new fabric.IText("Edit me", {
+        left: pointer.x,
+        top: pointer.y,
+        fontSize: 24,
+        fill: "black",
+        editable: true
       });
-    }
-
-    // --- Editing tools (basic placeholders) ---
-    document.getElementById("highlightBtn").addEventListener("click", () => {
-      ctx.fillStyle = "rgba(255, 255, 0, 0.5)";
-      ctx.fillRect(100, 100, 200, 30); // Example highlight
+      canvas.add(text).setActiveObject(text);
+      canvas.renderAll();
+      isAddingText = false;
+      canvas.defaultCursor = "default";
     });
 
-    document.getElementById("textBtn").addEventListener("click", () => {
-      ctx.fillStyle = "blue";
-      ctx.font = "20px Arial";
-      ctx.fillText("Custom Text", 150, 150); // Example text
+    // Enable digital signature
+    document.getElementById("enableSignBtn").addEventListener("click", () => {
+      canvas.isDrawingMode = true;
+      canvas.freeDrawingBrush.width = 3;
+      canvas.freeDrawingBrush.color = "black";
     });
 
-    document.getElementById("drawBtn").addEventListener("click", () => {
-      ctx.strokeStyle = "red";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(50, 50);
-      ctx.lineTo(200, 200);
-      ctx.stroke();
+    document.getElementById("disableSignBtn").addEventListener("click", () => {
+      canvas.isDrawingMode = false;
     });
 
-    document.getElementById("downloadBtn").addEventListener("click", () => {
+    // Save final image
+    document.getElementById("saveBtn").addEventListener("click", () => {
+      const dataURL = canvas.toDataURL({
+        format: "png",
+        quality: 1
+      });
       const link = document.createElement("a");
-      link.href = pdfCanvas.toDataURL("image/png");
-      link.download = "edited_page.png"; // saves only as image for now
+      link.href = dataURL;
+      link.download = "edited-image.png";
       link.click();
     });
   </script>
