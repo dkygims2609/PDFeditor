@@ -3,97 +3,95 @@
 <head>
   <meta charset="UTF-8">
   <title>PDF Editor</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- Tailwind CSS (CDN) -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- PDF.js library -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-  <script>
-    // ✅ Configure worker (important!)
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-6">
-  
-  <div class="bg-white p-6 rounded-2xl shadow-lg w-full max-w-3xl">
-    <h1 class="text-2xl font-bold mb-4 text-center">PDF Upload & Viewer</h1>
+<body class="bg-gray-100 flex flex-col items-center p-6">
 
-    <!-- File Upload -->
-    <input id="file-input" type="file" accept="application/pdf"
-      class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 mb-4">
+  <!-- Upload -->
+  <div class="mb-4">
+    <input type="file" id="fileInput" accept="application/pdf" class="border p-2">
+  </div>
 
-    <!-- PDF Viewer -->
-    <div id="pdf-viewer" class="flex flex-col items-center">
-      <canvas id="pdf-canvas" class="border shadow-md mb-4"></canvas>
-      <div class="flex justify-center gap-4">
-        <button id="prev" class="px-4 py-2 bg-blue-500 text-white rounded-lg">Previous</button>
-        <span id="page-info" class="text-gray-700"></span>
-        <button id="next" class="px-4 py-2 bg-blue-500 text-white rounded-lg">Next</button>
-      </div>
-    </div>
+  <!-- Toolbar -->
+  <div id="toolbar" class="hidden space-x-4 mb-4">
+    <button id="highlightBtn" class="px-4 py-2 bg-yellow-400 rounded">Highlight</button>
+    <button id="textBtn" class="px-4 py-2 bg-blue-400 rounded">Add Text</button>
+    <button id="drawBtn" class="px-4 py-2 bg-green-400 rounded">Draw</button>
+    <button id="downloadBtn" class="px-4 py-2 bg-purple-500 text-white rounded">Download</button>
+  </div>
+
+  <!-- PDF Viewer -->
+  <div id="pdfViewer" class="w-full max-w-4xl bg-white shadow-md p-4">
+    <canvas id="pdfCanvas" class="border"></canvas>
   </div>
 
   <script>
-    let pdfDoc = null,
-        pageNum = 1,
-        canvas = document.getElementById("pdf-canvas"),
-        ctx = canvas.getContext("2d");
+    const fileInput = document.getElementById("fileInput");
+    const pdfCanvas = document.getElementById("pdfCanvas");
+    const ctx = pdfCanvas.getContext("2d");
+    const toolbar = document.getElementById("toolbar");
 
-    const fileInput = document.getElementById("file-input");
-    const pageInfo = document.getElementById("page-info");
+    let pdfDoc = null;
+    let pageNum = 1;
 
-    // Handle File Upload
-    fileInput.addEventListener("change", function(e) {
+    fileInput.addEventListener("change", (e) => {
       const file = e.target.files[0];
       if (file && file.type === "application/pdf") {
-        const fileReader = new FileReader();
-        fileReader.onload = function() {
+        const reader = new FileReader();
+        reader.onload = function() {
           const typedarray = new Uint8Array(this.result);
-          pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+          pdfjsLib.getDocument(typedarray).promise.then((pdf) => {
             pdfDoc = pdf;
-            pageNum = 1;
             renderPage(pageNum);
+            toolbar.classList.remove("hidden"); // show edit tools
           });
         };
-        fileReader.readAsArrayBuffer(file);
-      } else {
-        alert("Please upload a valid PDF file.");
+        reader.readAsArrayBuffer(file);
       }
     });
 
-    // Render Page
     function renderPage(num) {
-      pdfDoc.getPage(num).then(function(page) {
-        let viewport = page.getViewport({ scale: 1.5 });
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
+      pdfDoc.getPage(num).then((page) => {
+        const viewport = page.getViewport({ scale: 1.5 });
+        pdfCanvas.height = viewport.height;
+        pdfCanvas.width = viewport.width;
 
-        let renderContext = {
+        const renderContext = {
           canvasContext: ctx,
-          viewport: viewport
+          viewport: viewport,
         };
         page.render(renderContext);
-
-        pageInfo.textContent = `Page ${num} of ${pdfDoc.numPages}`;
       });
     }
 
-    // Next & Prev Buttons
-    document.getElementById("prev").addEventListener("click", function() {
-      if (pageNum <= 1) return;
-      pageNum--;
-      renderPage(pageNum);
+    // --- Editing tools (basic placeholders) ---
+    document.getElementById("highlightBtn").addEventListener("click", () => {
+      ctx.fillStyle = "rgba(255, 255, 0, 0.5)";
+      ctx.fillRect(100, 100, 200, 30); // Example highlight
     });
 
-    document.getElementById("next").addEventListener("click", function() {
-      if (pageNum >= pdfDoc.numPages) return;
-      pageNum++;
-      renderPage(pageNum);
+    document.getElementById("textBtn").addEventListener("click", () => {
+      ctx.fillStyle = "blue";
+      ctx.font = "20px Arial";
+      ctx.fillText("Custom Text", 150, 150); // Example text
+    });
+
+    document.getElementById("drawBtn").addEventListener("click", () => {
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(50, 50);
+      ctx.lineTo(200, 200);
+      ctx.stroke();
+    });
+
+    document.getElementById("downloadBtn").addEventListener("click", () => {
+      const link = document.createElement("a");
+      link.href = pdfCanvas.toDataURL("image/png");
+      link.download = "edited_page.png"; // saves only as image for now
+      link.click();
     });
   </script>
-
 </body>
 </html>
